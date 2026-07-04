@@ -521,7 +521,7 @@ function IntroScreen({ onStart, installPrompt, onInstall }) {
         <p style={styles.introText}>
           You just moved into Forbes Hall and tonight, everyone wants to hang out.
           Knock on doors across the North, West, and East wings, recruit your
-          floormates, and haul supplies back to the common room before it's the
+          floormates, and haul supplies back to the lounge before it's the
           best gathering spot on campus. You can only carry 3 items at a time,
           so plan your trips.
         </p>
