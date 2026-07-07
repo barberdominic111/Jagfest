@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { createChiptunePlayer } from "./chiptune.js";
 
 /* =====================================================================
    FORBES JAGS — a Pac-Man-inspired dorm-party prototype
@@ -263,6 +264,40 @@ export default function ForbesJags() {
     setInstallPrompt(null); // the prompt event can only be used once
   };
 
+  const musicRef = useRef(null);
+  if (!musicRef.current) musicRef.current = createChiptunePlayer();
+  const [muted, setMuted] = useState(false);
+
+  // Browsers block audio until the user has interacted with the page at
+  // least once — catch the very first tap/click/keypress anywhere so
+  // music can kick in as early as possible.
+  useEffect(() => {
+    const unlock = () => {
+      musicRef.current.unlock();
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+    window.addEventListener("pointerdown", unlock);
+    window.addEventListener("keydown", unlock);
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, []);
+
+  // Switch between the calmer menu theme and the driving gameplay theme.
+  useEffect(() => {
+    const mode = game.phase === "playing" || game.phase === "dialogue" ? "gameplay" : "menu";
+    musicRef.current.start(mode);
+  }, [game.phase]);
+
+  const toggleMute = () => {
+    setMuted((m) => {
+      musicRef.current.setMuted(!m);
+      return !m;
+    });
+  };
+
   useEffect(() => {
     if (!game.message) return;
     const t = setTimeout(() => setGame((g) => ({ ...g, message: "" })), 2200);
@@ -498,30 +533,31 @@ export default function ForbesJags() {
         .fj-ring-pulse { animation: fj-ringpulse 0.5s ease-in-out infinite; }
       `}</style>
 
-      {game.phase === "intro" && <IntroScreen onStart={goToSetup} installPrompt={installPrompt} onInstall={handleInstall} />}
-      {game.phase === "setup" && <SetupScreen setup={setup} setSetup={setSetup} onStart={startGame} />}
+      {game.phase === "intro" && <IntroScreen onStart={goToSetup} installPrompt={installPrompt} onInstall={handleInstall} muted={muted} onToggleMute={toggleMute} />}
+      {game.phase === "setup" && <SetupScreen setup={setup} setSetup={setSetup} onStart={startGame} muted={muted} onToggleMute={toggleMute} />}
       {(game.phase === "playing" || game.phase === "dialogue") && (
-        <PlayScreen game={game} pressDir={pressDir} releaseDir={releaseDir} activeBtn={activeBtn} knock={knock} onMenu={goToMenu} />
+        <PlayScreen game={game} pressDir={pressDir} releaseDir={releaseDir} activeBtn={activeBtn} knock={knock} onMenu={goToMenu} muted={muted} onToggleMute={toggleMute} />
       )}
       {game.phase === "dialogue" && <ProgramDialogue dialogue={game.dialogue} onAnswer={answerProgram} />}
-      {game.phase === "win" && <EndScreen won game={game} onRestart={goToSetup} onMenu={goToMenu} />}
-      {game.phase === "lose" && <EndScreen won={false} game={game} onRestart={goToSetup} onMenu={goToMenu} />}
+      {game.phase === "win" && <EndScreen won game={game} onRestart={goToSetup} onMenu={goToMenu} muted={muted} onToggleMute={toggleMute} />}
+      {game.phase === "lose" && <EndScreen won={false} game={game} onRestart={goToSetup} onMenu={goToMenu} muted={muted} onToggleMute={toggleMute} />}
     </div>
   );
 }
 
 /* --------------------------- UI: Intro Screen ------------------------- */
 
-function IntroScreen({ onStart, installPrompt, onInstall }) {
+function IntroScreen({ onStart, installPrompt, onInstall, muted, onToggleMute }) {
   return (
     <div style={styles.introWrap}>
       <div style={styles.introCard}>
+        <button className="fj-btn" style={styles.muteBtn} onClick={onToggleMute}>{muted ? "🔇" : "🔊"}</button>
         <div style={styles.title}>FORBES JAGS</div>
         <div style={styles.subtitle}>Freshman Year Begins</div>
         <p style={styles.introText}>
           You just moved into Forbes Hall and tonight, everyone wants to hang out.
           Knock on doors across the North, West, and East wings, recruit your
-          floormates, and haul supplies back to the lounge before it's the
+          floormates, and haul supplies back to the common room before it's the
           best gathering spot on campus. You can only carry 3 items at a time,
           so plan your trips.
         </p>
@@ -552,13 +588,14 @@ function IntroScreen({ onStart, installPrompt, onInstall }) {
 
 /* --------------------------- UI: Setup Screen -------------------------- */
 
-function SetupScreen({ setup, setSetup, onStart }) {
+function SetupScreen({ setup, setSetup, onStart, muted, onToggleMute }) {
   const updateRA = (name, icon) =>
     setSetup((s) => ({ ...s, raSprites: { ...s.raSprites, [name]: icon } }));
 
   return (
     <div style={styles.introWrap}>
       <div style={styles.introCard}>
+        <button className="fj-btn" style={styles.muteBtn} onClick={onToggleMute}>{muted ? "🔇" : "🔊"}</button>
         <div style={styles.title}>SETUP</div>
         <div style={styles.subtitle}>Make it yours</div>
 
@@ -631,7 +668,7 @@ function SetupScreen({ setup, setSetup, onStart }) {
 
 /* --------------------------- UI: End Screen ---------------------------- */
 
-function EndScreen({ won, game, onRestart, onMenu }) {
+function EndScreen({ won, game, onRestart, onMenu, muted, onToggleMute }) {
   const loseText =
     game.loseReason === "busted"
       ? "Kevin busted you three times. The party's cancelled."
@@ -639,6 +676,7 @@ function EndScreen({ won, game, onRestart, onMenu }) {
   return (
     <div style={styles.introWrap}>
       <div style={styles.introCard}>
+        <button className="fj-btn" style={styles.muteBtn} onClick={onToggleMute}>{muted ? "🔇" : "🔊"}</button>
         <div style={{ ...styles.title, color: won ? "#6ea36a" : "#d1453b" }}>
           {won ? "PARTY OF THE YEAR!" : game.loseReason === "busted" ? "BUSTED!" : "TIME'S UP"}
         </div>
@@ -749,7 +787,7 @@ function ScoreMini({ delivered, winTarget }) {
 
 /* --------------------------- UI: Play Screen ---------------------------- */
 
-function PlayScreen({ game, pressDir, releaseDir, activeBtn, knock, onMenu }) {
+function PlayScreen({ game, pressDir, releaseDir, activeBtn, knock, onMenu, muted, onToggleMute }) {
   const cellPct = 100 / COLS;
   const cellPctY = 100 / ROWS;
   const allRAs = [game.kevin, ...game.extraRAs];
@@ -765,7 +803,10 @@ function PlayScreen({ game, pressDir, releaseDir, activeBtn, knock, onMenu }) {
         <div style={styles.hudStat}>
           <img src={playerSpriteSrc(game.playerSprite)} alt="" style={styles.hudSpriteThumb} /> {game.playerName}
         </div>
-        <button className="fj-btn" style={styles.menuBtn} onClick={onMenu}>☰ MENU</button>
+        <div style={{ display: "flex", gap: 5 }}>
+          <button className="fj-btn" style={styles.menuBtn} onClick={onToggleMute}>{muted ? "🔇" : "🔊"}</button>
+          <button className="fj-btn" style={styles.menuBtn} onClick={onMenu}>☰ MENU</button>
+        </div>
       </div>
 
       <div style={styles.hudRow}>
@@ -952,13 +993,14 @@ function Controls({ pressDir, releaseDir, activeBtn, knock }) {
 const styles = {
   page: { minHeight: "100vh", background: "#1c1533", color: "#ead9b3", fontFamily: "'VT323', monospace", display: "flex", flexDirection: "column", alignItems: "center", padding: "12px" },
   introWrap: { minHeight: "90vh", display: "flex", alignItems: "center", justifyContent: "center", width: "100%" },
-  introCard: { maxWidth: 480, textAlign: "center", padding: "24px 20px", border: "4px solid #2f2657", background: "#241b3a", borderRadius: 6 },
+  introCard: { position: "relative", maxWidth: 480, textAlign: "center", padding: "24px 20px", border: "4px solid #2f2657", background: "#241b3a", borderRadius: 6 },
   title: { fontFamily: "'Press Start 2P', monospace", fontSize: "1.3em", color: "#e2a13b", letterSpacing: 2, marginBottom: 10, lineHeight: 1.4 },
   subtitle: { fontFamily: "'Press Start 2P', monospace", fontSize: "0.6em", color: "#8fa3d1", marginBottom: 16 },
   introText: { fontSize: "1.05em", lineHeight: 1.35, marginBottom: 10 },
   introSmall: { fontSize: "0.85em", color: "#8fa3d1", marginBottom: 18 },
   startBtn: { fontSize: "0.7em", padding: "12px 20px", background: "#6ea36a", color: "#1c1533", borderRadius: 4, boxShadow: "0 4px 0 #4d7749" },
   installBtn: { fontSize: "0.6em", padding: "10px 16px", marginTop: 10, background: "#8fa3d1", color: "#1c1533", borderRadius: 4, boxShadow: "0 4px 0 #5f75a3" },
+  muteBtn: { position: "absolute", top: 10, right: 10, fontSize: "0.9em", padding: "5px 8px", background: "#2f2657", color: "#ead9b3", borderRadius: 4 },
   menuLink: { fontSize: "0.55em", padding: "10px 4px", background: "transparent", color: "#8fa3d1", marginTop: 10, textDecoration: "underline" },
   setupSection: { marginBottom: 14, textAlign: "left" },
   setupLabel: { fontFamily: "'Press Start 2P', monospace", fontSize: "0.48em", color: "#8fa3d1", display: "block", marginBottom: 6 },
